@@ -19,6 +19,7 @@ module Fluent::Plugin
     config_param :tag, :string
     config_param :log_group_name, :string
     config_param :log_stream_name, :string, default: nil
+    config_param :max_retries, :integer, default:60
     config_param :use_log_stream_name_prefix, :bool, default: false
     config_param :state_file, :string
     config_param :fetch_interval, :time, default: 60
@@ -153,7 +154,23 @@ module Fluent::Plugin
       }
       log_next_token = next_token(log_stream_name)
       request[:next_token] = log_next_token if !log_next_token.nil? && !log_next_token.empty?
-      response = @logs.get_log_events(request)
+      flg_retry = true
+      flg_retry_count = 0
+      while flg_retry do
+        begin
+          response = @logs.get_log_events(request)
+          flg_retry = false
+        rescue Exception => e
+          log.warn("Cloudwatch #{@log_group_name} get_events #{flg_retry_count} #{e}")
+          flg_retry_count = flg_retry_count + 1
+          if flg_retry_count > @max_retries
+            log.error("Cloudwatch #{@log_group_name} get_events Max retry limit reached quiting #{e}")
+            return []
+          else
+            sleep fibonacci(flg_retry_count)
+          end
+        end
+      end
       if valid_next_token(log_next_token, response.next_forward_token)
         store_next_token(response.next_forward_token, log_stream_name)
       end
@@ -189,6 +206,21 @@ module Fluent::Plugin
 
     def get_yesterdays_date
       (Date.today - 1).strftime("%Y/%m/%d")
+    end
+
+    # for exponentially backing off from API rate limits
+    # error_class=Aws::CloudWatchLogs::Errors::ThrottlingException error="Rate exceeded"
+    def fibonacci(n)
+        a = 0
+        b = 1
+        # Compute Fibonacci number in the desired position.
+        n.times do
+            temp = a
+            a = b
+            # Add up previous two numbers in sequence.
+            b = temp + b
+        end
+        return a
     end
   end
 end
