@@ -1,6 +1,7 @@
 require 'fluent/plugin/output'
 require 'thread'
 require 'yajl'
+require_relative 'linear_backoff'
 
 module Fluent::Plugin
   class CloudwatchLogsOutput < Output
@@ -44,6 +45,8 @@ module Fluent::Plugin
     config_param :remove_retention_in_days, :bool, default: false
     config_param :json_handler, :enum, list: [:yajl, :json], :default => :yajl
     config_param :log_rejected_request, :bool, :default => false
+    config_param :max_retries, :integer, default:30
+    config_param :sleep_dividend, :integer, default:100
 
     config_section :buffer do
       config_set_default :@type, DEFAULT_BUFFER_TYPE
@@ -454,7 +457,12 @@ module Fluent::Plugin
     def find_log_stream(group_name, stream_name)
       next_token = nil
       loop do
-        response = @logs.describe_log_streams(log_group_name: group_name, log_stream_name_prefix: stream_name, next_token: next_token)
+        request = {log_group_name: group_name, log_stream_name_prefix: stream_name, next_token: next_token}
+        response = backoff(@max_retries, @sleep_dividend, "Cloudwatch #{@log_group_name} describe_log_streams", request) do |request|
+          @logs.describe_log_streams(request)
+        end
+        return nil unless response
+
         if (log_stream = response.log_streams.find {|i| i.log_stream_name == stream_name })
           return log_stream
         end
@@ -465,21 +473,6 @@ module Fluent::Plugin
         sleep 0.1
       end
       nil
-    end
-
-    # for exponentially backing off from API rate limits
-    # error_class=Aws::CloudWatchLogs::Errors::ThrottlingException error="Rate exceeded"
-    def fibonacci(n)
-        a = 0
-        b = 1
-        # Compute Fibonacci number in the desired position.
-        n.times do
-            temp = a
-            a = b
-            # Add up previous two numbers in sequence.
-            b = temp + b
-        end
-        return a
     end
   end
 end
