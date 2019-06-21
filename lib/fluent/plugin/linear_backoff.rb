@@ -8,7 +8,7 @@ def backoff(max_retries, sleep_dividend, description, *args)
         rescue Exception => e
             log.warn("#{description}: #{flg_retry_count} #{e}")
             flg_retry_count += 1
-            if flg_retry_count == max_retries
+            if flg_retry_count >= max_retries
                 log.error("#{description}: Max retry limit reached quiting #{e}")
                 return nil
             else

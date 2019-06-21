@@ -329,9 +329,7 @@ module Fluent::Plugin
 
         begin
           t = Time.now
-          response = backoff(@max_retries, @sleep_dividend, "Cloudwatch #{group_name} put_log_events", args) do |args|
-            @logs.put_log_events(args)
-          end
+          response = @logs.put_log_events(args)
           request =  {
             "group" => group_name,
             "stream" => stream_name,
